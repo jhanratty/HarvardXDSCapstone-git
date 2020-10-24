@@ -1,0 +1,756 @@
+---
+title: "HarvardX Data Science Capstone Project "
+subtitle: "A Machine Learning Model for Classifying Malicious Files"
+version: 0.7
+author: "John Hanratty"
+date: October 25, 2020
+
+
+output:
+  pdf_document:
+    fig_caption: yes
+    latex_engine: xelatex
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+  word_document:
+    toc: yes
+    toc_depth: '2'
+mainfont: Helvetica
+sansfont: Helvetica
+
+header-includes:
+- \pagenumbering{gobble}
+
+---
+
+```{r setup, include=FALSE}
+# Libraries, data and set up code
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(dplyr)) install.packages("dplyr", repos = "http://cran.us.r-project.org")
+if(!require(stringr)) install.packages("stringr", repos = "http://cran.us.r-project.org")
+if(!require(formatR)) install.packages("formatR", repos = "http://cran.us.r-project.org")
+if(!require(tibble)) install.packages("tibble", repos = "http://cran.us.r-project.org")
+if(!require(jsonlite)) install.packages("jsonlite", repos = "http://cran.us.r-project.org")
+if(!require(httr)) install.packages("httr", repos = "http://cran.us.r-project.org")
+if(!require(lubridate)) install.packages("lubridate", repos = "http://cran.us.r-project.org")
+if(!require(ggplot2)) install.packages("ggplot2", repos = "http://cran.us.r-project.org")
+if(!require(scales)) install.packages("scales", repos = "http://cran.us.r-project.org")
+if(!require(gridExtra)) install.packages("gridExtra", repos = "http://cran.us.r-project.org")
+if(!require(gtable)) install.packages("gtable", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(corrplot)) install.packages("corrplot", repos = "http://cran.us.r-project.org")
+if(!require(knitr)) install.packages("knitr", repos = "http://cran.us.r-project.org")
+if(!require(kableExtra)) install.packages("kableExtra", repos = "http://cran.us.r-project.org")
+if(!require(tinytex)) {
+  install.packages('tinytex')    ## YOU MAY NEED TO UNBLOCK POPUPS FROM THIS SITE
+  tinytex::install_tinytex()
+  tinytex::tlmgr_install("tex-gyre")
+}
+
+library(tidyverse)
+library(dplyr)
+library(stringr)
+library(formatR)
+library(tibble)
+library(jsonlite)
+library(httr)
+library(lubridate)
+library(ggplot2)
+library(scales)
+library(gridExtra)
+library(gtable)
+library(caret)
+library(corrplot)
+
+library(knitr)
+library(kableExtra)
+library(tinytex)
+
+knitr::opts_chunk$set(
+  echo = FALSE, cache = TRUE, 
+  fig.width = 4, fig.height = 3, fig.retina = 2, fig.align = "center", out.width = '100%',
+  tidy=TRUE, tidy.opts=list(arrow=TRUE, indent=2))
+
+theme_set(theme_light(base_size = 11)) 
+
+# GET THE DATA FOR TABLES AND DIAGRAMS
+ds_cmd <- readRDS(file = "_msu_train")
+PerfDat <- readRDS("CapstoneRptData")
+
+
+
+```
+
+\newpage
+\setcounter{page}{1}
+\pagenumbering{arabic}
+# Introduction
+This capstone project focused on building a machine learning model for identifying malicious files.  Cybersecurity represents a critical issue for all businesses, government agencies, and consumers. These organizations encounter thousands of new files daily, each a security risk. When a new file appears, the anti-virus industry may take weeks or months to discover it and settle on a MALWARE classification.  During this period, the new file remains unclassified or often misclassified. Also, attackers often customize malware for a specific organization, so commercial anti-virus products may not recognize these unique attacks.  
+
+This project developed a machine learning model to close this detection gap by analyzing a file's attributes and predicting the eventual industry consensus.  The resulting model might act as an initial screen for malware analysis labs or detection products by processing voluminous files to identify suspicious candidates for further analysis. With more development, the model could perform automated malware conviction in enterprise environments where there is a very low tolerance for false positives and negatives.
+
+Data sets were created using the ReversinLabs TitanmCloud File Intelligence Service, which collects, analyzes, and catalogs 10 million goodware and malware files daily. The information includes both internal attributes extracted from the files and anti-virus industry classification information. Since applications for the model will vary widely in file mix, the project created multiple data sets for training and testing; each had a different size, file mix, and percentage of malicious files. The model versions were assessed with all test sets to understand the implications of these variations. As expected, test sets that matched the training set's file mix (e.g., partitioned from the same data set) performed percentage points better.
+
+The model used multiple off-the-shelf modeling tools (e.g., RPART, Random Forest, XGB) for prediction. An ensemble voting algorithm improved the accuracy of results but, more importantly, enabled a trade-off between accuracy, false positives, and false negatives.  This trade-off is important because applications of the model have different tolerances for incorrectly classifying a file as good or bad. For example, a gateway that blocks good files could interrupt business. In contrast, a malware analysis team may want to identify every suspicious file for analysis, so can tolerate false positives. 
+
+The model pre-processed the most predictive file attributes for presentation to the modeling tools. In most cases, these were binary values indicating the presence of an attribute or a count indicated the occurrences of an attribute (e.g., number of strings). Factor values/levels (e.g., file type) were pruned to the most important values.
+
+```{r model average results, echo=FALSE, cache=TRUE}
+# Largest training dataset with the medium variable mix (batch = "zwm") had the best performance averaged across all 4 test sets. 
+
+ptab <- PerfDat %>% filter(ftype == "ALL" & batch %in% c("zwm") & model %in% c("ens1x","ens2x","ens3x")) %>%
+  group_by(model) %>% 
+  summarize(Accuracy = sprintf("%.1f%%", mean(Accuracy)), 
+            FalsePos = sprintf("%.1f%%", mean(FalsePos)), 
+            FalseNeg = sprintf("%.1f%%", mean(FalseNeg)))
+
+knitr::kable(ptab, 
+             caption = "Final Model Performance Averaged Across Test Sets", 
+             align = "r",
+             linesep = "") %>%
+  kable_styling(latex_options = 
+                  c("striped", "hold_position"),
+                full_width = F) %>%
+    row_spec(0, bold = T, color = "white", background = "#4682b4") 
+  
+```
+
+A theme for this project was studying the effects of different test sets on performance results.  The table above shows realistic results by using the *average performance across all test sets*.  An average better represents target environments because accuracy for matched test/training sets was higher than for unmatched sets (i.e., different file mixes) . In real-life, file mixes will differ greatly.  The three ensembles provide a choice of the best model depending on your tolerance for false positives or negatives.  You have a choice! 
+
+This Capstone project confirmed some assumptions and taught some valuable lessons about designing a machine learning model. Below are some observations that may merit further investigation in a future project.
+
+\newpage
+**Observations**
+
+**Train Set Size** - As expected, increasing the number of objects in the training data set improved the model's performance. The trade-off is **much** longer training time.  Performance increased roughly 3-4 percentage points by doubling the number of objects in the training set. Improvements will taper off with further increases, but I didn't have the computing horsepower to train larger data sets. :)
+
+**Ensemble Results** - Ensemble results exceeded the performance of individual off-the-shelf analysis tools and reduced wide variations (outliers) across datasets with different file mixes.  The voting algorithm based on # of convictions by the analysis tools provided a better trade-off between accuracy and false positives/negatives.  
+
+**Data Composition** - Training and test sets created by partitioning (i.e., caret createDataPartition()) a data set from one download session performed better than using sets from different downloads sessions. The effects of file type mix were tested but didn't fully explain the performance difference.  Evaluating the model performance using various data sets helps to better predict performance in real-life scenarios that have random file flows.  How different data set characteristics affect modeling tool performance requires further research.
+
+**Variables Importance** - An initial base variable set was chosen by eye-balling varImp() results for training sessions. The reduction in variables increased performance and reduced training time.  In a final round, file_subtype, a factor with over 100 levels, was trimmed to 10 levels.  VarImp showed that only a handful of file_subtypes were valuable for predictions. The level "Other" contained the rest of the files.  Model performance increased slightly compared with the full set of subtypes with a significant reduction in training time.
+
+**Sub-model Architecture** - An architecture that used separate sub-models for different file types was created as an experiment.  The initial idea was to address the long training times and crashing modeling tools by breaking the model into smaller chunks.  You could also imagine that each sub-model would provide better performance through specialization.  The drawback was the management of training and testing six sub-models (6x the work). The results provided valuable insights into the model's performance by file type.  This architecture had comparable accuracy (~0.1% less) than a monolithic model but included no sub-model optimization for file type other than training tuning parameters.  In the end, it was better because of time constraints to let random forest and rpart figure out how to divide the variables. 
+
+Many researchers have attacked malware detection with novel approaches and achieved varied results. This project certainly does not obviate their work. Several data transformation and modeling approaches wer implemented with promising results.  Positive trends were uncovered that identify some fruitful areas for further development and improvement. 
+
+
+\newpage
+# Data Wrangling
+
+## ReversingLabs TiCloud Database
+The ReversingLabs (www.reversinglabs.com) TiCloud file intelligence service processes 10 million files per day and has a catalog of over 10 billion goodware and malware files. Two services provided detailed file information.
+
+**File Intelligence Service**
+
+* *File internals* - The service decomposes each file to extract thousands of attributes, including internal format, certificates, structure, strings, libraries, and other components.
+
+* *File relationships* - Many files contain or are contained by other files (e.g., zip files, installation package, document illustrations, or packed malware). TiCloud catalogs these parent/child relationships and analyzes the constituent files.
+
+**File Reputation Service**
+
+* *Multi-vendor anti-virus scan results* - Scanning results for 40+ popular anti-virus products are available.
+
+* *Summary classification data* - Information is summarized by ReversingLabs to provide a threat level, malware family, platform, and anti-virus vendor consensus.
+
+The File Intelligence Service was used to create training/test sets, and the File Reputation Service was used to build the classification reference set. The training/test sets used only attributes extracted directly from the files and no classification information from anti-virus vendors or ReversingLabs. The goal was to use only the attributes of a file to predict it's classification.
+
+## Downloading the Data Sets
+The TiCloud services use a REST services POST command that passes a list of file hashes to query the service.  The service returns data for files in a JSON string, which was processed and stored in a dataframe. The download process converted the voluminous and heavily nested JSON file data into a raw data set in a data frame format for model research and development (example JSON tree below). The raw data set was then processed and converted to create the modeling data set. This report submission includes the scripts used for this process.
+
+Since ReversingLabs granted the project access to a few hundred-thousand files, the automated download code had to detect and avoid duplicate or malformed queries. The  R scripts implemented error checking and status logging so that processing errors or a stoppage could be debugged and fixed quickly. 
+
+```{r json_tree, echo=FALSE, fig.cap="JSON for RLDATE", fig.show='hold',fig.align="center", out.width = '60%'}
+knitr::include_graphics(c("JSON ScrShot1.png"))
+```
+
+## Reference Data Sets
+ Reference data sets to match the modeling data sets were created to obtain a rating for each file as MALWARE or UNRATED (i.e., innocent until explicitly classified as MALWARE). The TiCloud File Reputation Service classifies files based on historical data and anti-virus scans by 40+ products.  Anti-virus scanners provide pretty good detection a month or two after an attack's debut because time is needed to detect new malware and create signatures. ReversingLabs assigns MALWARE classification when a significant number of reliable anti-virus products show a detection. The ReversingLabs classification was deemed sufficient as the reference set for this project. 
+
+
+\newpage
+# Model Data Sets
+Model data sets were developed on two dimensions: file mix and attribute selection.  File mix impacts real-world performance since production environments have distinct distributions of files. Attribute selection investigated the right combination of file characteristics and relationships to predict malware.
+
+The TiCloud service provides file structure, certificate information, external references, internal strings, and parent/child relationships  Many attributes only applied to specific file types or exhibited low correlation to malware. Relevant attributes were transformed and added to the model data set. The trick was to invest time on attributes that have the highest impact on overall model performance. In some cases, carefully chosen investment in less prevalent file types might have a significant impact.  
+
+## Data Set File Mix
+The TiCloud service identifies over 25 different file formats, each having a unique structure and attributes.  For this project, the file formats were consolidated by prevalence into six categories, with "Other" covering around 20 of the least common types. Data sets created from different downloads using random file lists varied in size, file type mix, and percentage of malicious files. The table below shows the data sets make up.  These data sets mimicked the variation in production environments.
+
+```{r FileType Prevelance, echo=FALSE, cache=TRUE, fig.width=8}
+mtab1 <- data.frame(Class=c("MALICIOUS", "UNRATED"), 
+                   MST =  c("40%","60%"), 
+                   MSU =  c("25%","75%"), 
+                   MEQ =  c("33%", "67%"),
+                   MSW = c("37%", "63%"),
+                   TXU = c("23%", "77%"))
+
+dset <- PerfDat %>% filter(batch %in% c("zt","zus","zvs","zwm"), testset == "_mst_test" & model == "rpart" & ftype %in% c("PE","PEplus","Binary","Document", "Text","Other","ALL")) %>% 
+  select(batch, ftype, Objects) %>% spread(ftype, Objects) %>%
+  mutate(
+    DataSet = case_when(batch %in% c("zt", "z2", "ztm")  ~ "MST",
+                        batch %in% c("zv","zvs", "zvm")  ~ "MEQ",
+                        batch %in% c("zw", "zws", "zwm") ~ "MSW",
+                        batch %in% c("zu", "zus", "zum") ~ "MSU",
+                        TRUE ~ batch),
+    Files = format(as.numeric(ALL), big.mark=","),
+    Malicious = as.character(mtab1[1, DataSet]),
+    Download = case_when(DataSet == "MST" ~ "A",
+                       DataSet == "MEQ" ~ "A*",
+                       DataSet == "MSU" ~ "C",
+                       DataSet == "MSW" ~ "A+C",
+                       TRUE ~ ""),
+    File_Types = "",
+    PE = sprintf("%.0f%%", 100*as.numeric(PE)/as.numeric(ALL)),
+    Binary = sprintf("%.0f%%", 100*as.numeric(Binary)/as.numeric(ALL)),
+    PEplus = sprintf("%.0f%%", 100*as.numeric(PEplus)/as.numeric(ALL)),
+    Document = sprintf("%.0f%%", 100*as.numeric(Document)/as.numeric(ALL)),
+    Text = sprintf("%.0f%%", 100*as.numeric(Text)/as.numeric(ALL)),
+    Other = sprintf("%.0f%%", 100*as.numeric(Other)/as.numeric(ALL))) %>% 
+  select(DataSet, Files, Malicious, Download, File_Types, PE, Binary, Text, Document, PEplus, Other)
+  
+#   Data   malicious     pe   bin   pep   doc   txt   oth
+# txu_test     0.26%   0.40% 0.23% 0.05% 0.04% 0.21% 0.06%
+TXU_data <- data.frame(DataSet = "TXU",
+                       Files = "28,610", 
+                       Malicious = "26%", 
+                       Download = "B", 
+                       File_Types = " ", 
+                       PE = "40%",
+                       Binary = "23%",
+                       Text = "21%",
+                       Document = "4%",
+                       PEplus = "5%",
+                       Other = "6%")
+dset <- rbind(dset, TXU_data) 
+df2 <- data.frame(t(dset[-1]))
+colnames(df2) <- dset$DataSet
+df2 <- select(df2, 1, MST, MEQ, MSU, MSW, TXU) 
+ 
+knitr::kable(df2, 
+             caption = "Dataset File Mix", 
+             align = "c",
+             linesep = "") %>%
+  kable_styling(latex_options = 
+                  c("striped", "hold_position"),
+                full_width = F) %>%
+  row_spec(0, bold = T, color = "white", background = "#4682b4") %>%
+  row_spec(4, bold = T, color = "white", background = "#4682b4") %>%
+  footnote(symbol = "MEQ was created from MST by deleting files to more closely match the file type mix in MSU")
+```
+\newpage
+## Strings
+Files contain text strings containing various information, including IP addresses, URLs, email addresses, and passwords.  The TiCore service provides a list of strings from each file. A count for a few common string types (IP Addresses, email, URL) was extracted and used as input variables for the model.  For example, a list of IP addresses might indicate that malicious code that wants to "phone home." 
+
+```{r strings_count1, echo=FALSE, fig.width=7,fig.height = 2.5, cache=TRUE}
+# graphFactor
+# Fin & Ref should be of equal length an filtered for specific graph, e.g. file_type
+graphFractor <- function(Fin,    # list number of factors per file (filter1st)
+                         Ref,    # list of file malicious (1/0) ratings (filter1st)
+                         ctitle = " ", 
+                         cbreaks = c(0,10,100,1000,10000),
+                         clabels = c("< 10", "10-100", "100-1k","1k-10k"))
+{
+  pctImpact <- sprintf("%.1f %%", length(Fin)/nrow(ds_cmd))
+  df_fact <- data.frame(Fin, Ref)
+  df_fact$bin <- cut(Fin, breaks = cbreaks, labels = clabels)
+  df_fact %>% filter(!is.na(bin)) %>% group_by(bin) %>%
+    summarize(Number_Files = n(), 
+              Malicious = sum(Ref == 1), 
+              Unrated = sum(Ref != 1),
+              MalPct = sprintf("%.0f%%", 100 * Malicious / Number_Files),
+              .groups = 'drop') %>%
+    gather(Class, Files, c('Malicious','Unrated')) %>%
+    ggplot(aes(bin, Files, fill=Class)) +
+      geom_bar(stat = "identity") +
+      ggtitle(ctitle) +
+      geom_text(size=2, vjust=-0.25, color="maroon", aes(label = MalPct, x = bin, y = Number_Files)) +
+    xlab('') + 
+    ylab('Files') +
+    scale_y_continuous(label = number_format(big.mark = ",")) +
+    scale_x_discrete(position = "top" ) +
+    scale_fill_manual(values=c("maroon","steelblue")) +
+    theme_light() +
+    theme(plot.title = element_text(size = 12, face = "bold")) +
+    theme(
+      legend.position = c(.8, .7),
+      legend.title = element_blank(),
+      legend.key.width=unit(.2, "cm"),
+      legend.text=element_text(size=6),
+      legend.key.height = unit(.2, "cm")
+    )
+}
+
+## Let's graph some graphs about strings
+cc <- ds_cmd %>% filter(!is.na(str_all))
+gr1 <- graphFractor(cc$str_all, cc$malicious == "MALICIOUS", "URL, IP Address & Email Strings")
+
+cc <- ds_cmd %>% filter(!is.na(str_rest))
+gr2 <- graphFractor(cc$str_rest, cc$malicious == "MALICIOUS", "Other Strings")
+
+####################################################
+## Group by Number of Parents - malicious vs unrated
+tab_p <- ds_cmd %>% 
+  group_by(Parents = parents) %>%
+  dplyr::summarize(Files = n(), 
+                   Unrated = sum(malicious == "UNRATED"),
+                   Malicious = sum(malicious == "MALICIOUS"),
+                   MalPct = sprintf("%.0f%%", 100 * Malicious / Files)) %>%
+  gather(Class, Percent, c('Malicious','Unrated')) %>% arrange(Parents)   
+
+graph_p <- tab_p %>%
+  ggplot(aes(Parents, Percent, fill=Class)) +
+  geom_bar(stat="identity") +
+  geom_text(size=2, color="maroon", vjust=-0.25, aes(label = MalPct, x = Parents, y = Files)) +
+  ggtitle("Number of Parents per File") + 
+  xlab('') + ylab('Files') +
+  scale_y_continuous(label = number_format(big.mark = ",")) +
+  scale_x_continuous(position = "top",
+                     breaks = c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)) +
+  scale_fill_manual(values=c("maroon","steelblue")) +
+  theme_light() +
+  theme(plot.title = element_text(size = 12, face = "bold")) +
+  theme(
+    legend.position = c(.8, .7),
+    legend.title = element_blank(),
+    legend.key.width=unit(.2, "cm"),
+    legend.text=element_text(size=6),
+    legend.key.height = unit(.2, "cm")
+    )
+
+
+####################################################
+## Group by Number of Children - malicious vs unrated
+tab_c <- ds_cmd %>% 
+  group_by(Children = children) %>%
+  dplyr::summarize(Files = n(), 
+                   Unrated = sum(malicious == "UNRATED"),
+                   Malicious = sum(malicious == "MALICIOUS"),
+                   MalPct = sprintf("%.0f%%", 100 * Malicious / Files)) %>%
+  gather(Class, Percent, c('Malicious','Unrated')) %>% arrange(Children)   
+
+graph_c <- tab_c %>%
+  ggplot(aes(Children, Percent)) +
+  geom_bar(aes(fill=Class), 
+           stat="identity") +
+  geom_text(size=2, color="maroon", vjust=-0.25, aes(label = MalPct, x = Children, y = Files)) +
+  ggtitle("Number of Children per File") + 
+  xlab('') + ylab('Files') +
+  scale_y_continuous(label = number_format(big.mark = ",")) +
+  scale_x_continuous(position = "top",
+                     breaks = c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)) +
+  scale_fill_manual(values=c("maroon","steelblue")) +
+  theme_light() +
+  theme(plot.title = element_text(size = 12, face = "bold")) +
+  theme(
+    legend.position = c(.80, .7),
+    legend.title = element_blank(),
+    legend.key.width=unit(.2, "cm"),
+    legend.text=element_text(size=6),
+    legend.key.height = unit(.2, "cm")
+    ) 
+
+grid.arrange(arrangeGrob(gr1, 
+                         gr2, 
+                         ncol = 2, heights = c(2.5)))
+
+```
+
+
+```{r parent_children, echo=FALSE, fig.width=7,fig.height = 2.5, cache=TRUE}
+grid.arrange(arrangeGrob(graph_p, 
+                         graph_c,
+                         ncol = 2, heights = c(2.5)))
+
+
+```
+
+
+## Parent-Child File Relationships
+Files often arrive as 'packages' that contain other files (e.g., zip files, installers, malware packers). The TiCloud file data contains hashes of these parent and child file relationships. For example, an installation package file could contain hundreds of files, each containing more files.  This characteristic creates a cluster of relationships useful for analysis since many packages may contain the same file. The presence of a file in a malicious package might increase suspicion when it appears in other packages.  The frequency and distribution of particular files across multiple packages can also indicate maliciousness.  This model used only the count of child and parent relationships.  Further development might investigate the clustering concept further. 
+
+## File Attributes 
+TThe TiCloud service provides thousands of file attributes with a text summary paragraph of relevant information extracted from the file. The attributes required conversion and cleanup to support modeling.  Key strings were also extracted from the summary paragraph to augment the attribute list. The correlation diagram below shows the final list of attributes except for file_type and file_subtype, which were factors. 
+
+```{r corr_plot, echo=FALSE, cache=TRUE, caption="Attribute Correlation", fig.width = 4}
+p <- ds_cmd %>% mutate(malicious = ifelse(malicious == "MALICIOUS",1,0)) %>%
+  rename(fun_sim = p_rha,
+         run_proc = p_run_proc,
+         und_api = p_undoc_api,
+         china = p_china,
+         russia = p_russia,
+         korea = p_korea,
+         dev_id = p_dev_id,
+         dev_cf = p_dev_cf,
+         monitor = p_monitor,
+         crypto = p_crypt,
+         protect = p_protect,
+         self_sign = p_self_sign, 
+         app_dat = p_append_dat) %>% 
+  select(-malicious, -file_type, -file_subtype,-ident_name) %>%
+  cor() %>% corrplot(tl.col = "black", tl.cex = .7, number.cex = .7, cl.cex = .7)
+
+```
+
+\newpage
+
+# Model Description - Malware Identification
+
+## Ensemble Algorithm
+**Ensemble results were more consistent and outperformed individual model algorithms and provided options for matching an applications' False Positive/Negative requirements.**
+
+The final model uses an ensemble of off-the-shelf analysis tools with a voting system that provides the final prediction. The tools were:, Regression Tree (rpart), Random Forest (rf), and Boosted Gradient (xgb). Other tools were tested but omitted because of redundant results, poor memory management, or slow performance.  The ensemble voting algorithm used 1 (ens1x), 2 (ens2x), and 3 (ens3x) MALICIOUS predictions from the off-the-shelf tools to predict an outcome.  
+
+All results were tested against multiple data sets with varying file mixtures to understand the effects on Accuracy, False Positives, and False Negatives. The model's eventual target application will define which performance measures are most important.  In some situations, false positives could block legitimate business, so minimizing these are critical.  In other cases, the model might provide one of several screens to detect all suspicious files, so minimal false negatives are desirable.
+
+The table below shows the performance results. Ensx1 (one or more convictions) showed high accuracy but higher false positives, as shown by the diagram's red dots.  Ens2x (2 or more convictions) and ens1x (3 convictions) had lower accuracy but much lower false positives.  The choice between ens2x and ens3x depends on your aversion to false positives. 
+
+Also, XBG shows the lowest performance of the off-the-shelf analysis tools.  A follow on project could investigate a replacement or an additional tool to increase model performance.
+
+```{r Model box, echo=FALSE, cache=TRUE, fig.width=5}
+PerfDat %>% filter(ftype == "ALL") %>%
+  filter(batch %in% c("zwm")) %>%
+  ggplot(aes(model, Accuracy, FalsePos)) +
+    geom_boxplot(outlier.shape = NA) +
+    geom_point(aes(col=FalsePos), size=2) +
+    scale_colour_gradient(low = "green", high = "red") +
+    ggtitle("Performance By Model and Ensemble") +
+    coord_cartesian(ylim = c(85, 100)) +
+    scale_y_continuous(label = number_format(suffix = "%", scale = 1, accuracy = 1)) +
+    scale_x_discrete(position = "top" ) +
+    theme_light() +
+    theme(plot.title = element_text(size = 12, face = "bold"))
+
+
+```
+
+
+## Data Set Size
+**Larger data sets improved training performance. A bigger computer is needed.** 
+
+As expected,  the size of the train data increased the model performance. Size also increase training time significantly. Amazon and Azure were tested but expensive.  More compute power is needed to investigate this further.
+
+```{r DateSet Size, echo=FALSE, cache=TRUE}
+size_tab <- PerfDat %>% 
+  filter(model == "rpart" & ftype == "ALL" & testset == "_mst_test" ) %>%
+  select(batch, Objects) %>% mutate(Objects = as.numeric(Objects))
+
+
+gr <- PerfDat %>% select(batch, testset, model, ftype, Accuracy, FalsePos, FalseNeg) %>% 
+  filter(batch %in% c("ztm","z2", "zu", "zum", "zv", "zvm", "zw", "zwm") &  ftype == "ALL" & model %in% c("ens2x")) %>% 
+  right_join(size_tab, by="batch") %>% filter(!is.na(Accuracy))
+
+#  filter(!(batch=="zus" & testset =="_msu_test"))
+
+gr %>% ggplot(aes(Objects, Accuracy)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x) +
+  scale_x_continuous(
+    labels = scales::comma_format(big.mark = ',',
+                                  decimal.mark = '.'))+
+  ggtitle("Performance by Training Set Size") +
+  coord_cartesian(ylim = c(85, 100)) +
+  scale_y_continuous(label = number_format(suffix = "%", scale = 1, accuracy = 1)) +
+  theme_light() +
+  theme(plot.title = element_text(size = 12, face = "bold"))
+
+
+  
+
+```
+
+## Data Set File Mix
+**The model performance decreased for test sets from different sources that the training data set. This project tracked performance usig the average results across several diverse test data sets to mimick real-life file mixes.**
+
+Performance differed depending on whether the train/test data sets came from the same download and different downloads. This fact became evident when test data sets under-performed when not partitioned from the same data set as the training set.  Further investigation showed that these test sets differed in the file type mix and the percentage of malicious files.  The MST, MSU and TXU datasets came from three differenct downloads and contained significantly different file mixes. TXU was a test set only (no corresponing training set) and always showed lower Accuracy results.  To test the effects of file type mix, a derivative data set, MEQ, was created from MST that 'equlized' the file mix to better match MSU. As shown in the diagram below, MEQ & MST performed similarly but still differently than MSU.  File type mix alone does not account for the file performance variation.  Further research is required to understand the causes.      
+
+The implication is that the model performance is sensitive to the random file mixes that are found in malware production environments. Using multiple test data sets with from separate downloads provides a more realistic performance characterization (see the diagram). The project measured the average performance across the data sets for assessment.
+
+
+```{r train test, echo=FALSE, cache=FALSE, fig.width = 7, fig.height=4}
+txtestset <- data.frame(testset = c("_mst_test","_msu_test", "_meq_test", "_txu_test"), 
+                        test = c("mst", "msu", "meq", "txu"))
+
+txbatch <-  data.frame(batch = c("z2","zt","ztm", "zu","zus","zum", "zv","zvs","zvm","zw","zws", "zwm"),
+                       train = c("mst", "mst","mst", "msu", "msu", "msu", "meq", "meq", "meq", "msw", "msw", "msw"))
+
+
+tab1 <- PerfDat %>% filter(ftype == "ALL" & 
+                    model == "ens2x" &
+                    batch %in% c("ztm","zum", "zvm")) %>%
+   right_join(txtestset, by="testset") %>%
+   right_join(txbatch, by="batch") %>% 
+   select(batch, testset, ftype, Accuracy, train, test) %>% filter(!is.na(ftype))
+
+tab1 %>% ggplot(aes(factor(train, levels=c("mst","meq","msu", "msw")), 
+                    factor(test, levels=c("txu", "mst", "meq", "msu", "msw")),
+                    fill=Accuracy, label=sprintf("%.2f%%", Accuracy))) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "#002244") +
+  scale_x_discrete(position = "top" ) +
+  geom_text() +
+  geom_text(aes(color = Accuracy > 90)) +
+  scale_color_manual(guide = FALSE, values = c("black", "white")) +
+  ggtitle("Lower Accuracy Results for Test/Train Sets from Different Sources") +
+  xlab("Training Set") + ylab("Test Set") +
+    annotate("label", 
+          label = "MST & MEQ from Download A - Similar Accuracy", 
+          size=2, label.size = NA, hjust = 0, x = 1, y = 4.35, color = "white", fill="maroon") +
+    annotate("label", 
+          label = "Lower Accuracy with Dissimilar Test Sets", 
+          size=2, label.size = NA, hjust = .5, x = 3, y = 3.35, color = "white", fill="maroon") +
+    annotate("label", 
+          label = "MSU from Download C", 
+          size=2, label.size = NA, hjust = .5, x = 3, y = 3.55, color = "white", fill="maroon") +
+    annotate("label", 
+          label = "TXU Download B (different than all training sets - Lower Accuracy for All Training Sets", 
+          size=2, label.size = NA, hjust = .5, x = 2, y = 1.35, color = "white", fill="maroon") +
+  theme_light() +
+  theme(plot.title = element_text(size = 12, face = "bold"))
+
+```
+
+
+## Data Set Variable Optimizations
+**More variables significantly increases training time and can decrease model performance. Non-predictive file attributes and factors were removed from the data set, which increased performance with fewer variables.**
+
+The systematic assessment added and removed variables and factors based on their importance for prediction.  An optimized variable set significantly reduced the training time while increasing performance.  Superfluous variables decreased model performance. The table and graph below show a variable optimization pass involving the factor *file_subtype* with over 100 levels.  VarImp ratings helped consolidate these into ten levels.  The result was quicker training time and sightly better model performance.
+
+```{r varimp heatmap, echo=FALSE, cache=TRUE, fig.width = 7, fig.height = 8}
+p <- PerfDat %>% filter(batch %in% c("zu","zv") & 
+                   ftype == "ALL" & 
+                   model %in% c("rpart", "rfc", "xgb") & 
+                   testset == "_mst_test" & 
+                   varimp != "-") %>%
+  select(batch, model, varimp) %>%
+  mutate(tag = paste(sep="", model, "_", batch)) %>%
+  arrange(tag)
+
+imptab <- data.frame(attr=p$varimp[[1]]$attr)
+for (x in 1:nrow(p)) {
+  im <- data.frame(attr = p[x,]$varimp[[1]]$attr,
+                   importance = p[x,]$varimp[[1]]$Overall)
+  imptab <- left_join(imptab, im, by="attr") 
+}
+names(imptab) <- c("Attribute", p$tag)
+imptab <- imptab %>% mutate(ave = rowMeans(select(., 2:(nrow(p)+1)), na.rm = TRUE)) %>%
+  arrange(desc(ave)) %>% slice(1:52)
+
+dat_import <- imptab %>% mutate(Attribute = fct_reorder(Attribute, .[["ave"]])) %>%
+  gather(tag, value, -Attribute) %>% 
+  filter(!is.na(value)) %>% arrange(desc(value))
+
+dat_import %>% ggplot(aes(tag, Attribute)) +
+  geom_tile(aes(fill=value), colour = "white") +
+  scale_fill_gradient(low = "white", high = "#002244") +
+  scale_x_discrete(position = "top" ) +
+  geom_hline(yintercept = 19, color="maroon", size=1, linetype="dashed") +
+  annotate("text", 
+          label = "CUT OFF FOR TUNED SET ", 
+          size=3, hjust = .5, x = 3, y = 20, color = "maroon") +
+  ggtitle("Variable Importance (varImp) by Model") +  # working from Model not HistDat
+  xlab(" ") + ylab("") +
+  theme_light() +
+  theme(plot.title = element_text(size = 12, face = "bold")) +
+  theme(legend.position = "right",
+        legend.direction = "vertical") +
+  theme(axis.text.x = element_text(angle = 0, hjust=0)) +
+  guides(fill = guide_legend(ncol = 1, reverse = TRUE))
+```
+
+```{r Number of Variables, echo=FALSE, cache=TRUE, fig.width=7}
+ptab <- PerfDat %>% filter(ftype == "ALL" & model %in% c("ens2x","ens3x") & !batch %in% c("zw","zwm","zws")) %>% 
+  mutate(Variables = as.factor(case_when(Variables == 25 ~ "Basic Set (25 Vars)",
+                              Variables == 35 ~ "Tuned Set (35 Vars)",
+                              Variables == 103 ~ "Xtra Big Set (103 Vars)",
+                              TRUE ~ as.character(Variables)))) 
+p <- ptab %>% group_by(Variables) %>% 
+  summarize(AveAccuracy =  median(Accuracy)) %>% 
+  ungroup() %>% arrange(Variables) %>% pull(AveAccuracy)
+
+ptab %>% ggplot(aes(Variables, Accuracy)) +
+    geom_boxplot() +
+    ggtitle("Variable Selection versus Accuracy") +
+    geom_point(aes(col=FalsePos), size=2) +
+    scale_colour_gradient(low = "green", high = "red") +
+    xlab("") +
+    scale_y_continuous(label = number_format(suffix = "%", scale = 1, accuracy = 1))  +
+    annotate("text", 
+          label = paste(sprintf("%.1f%%  ", p[1])),
+          size=3, hjust = 1, x = 1, y = p[1]+.5, color = "steelblue") +
+    annotate("text", 
+          label = paste(sprintf("%.1f%%  ", p[2])),
+          size=3, hjust = 1, x = 2, y = p[2]+.5, color = "steelblue") +
+    annotate("text", 
+          label = paste(sprintf("%.1f%%  ", p[3])),
+          size=3, hjust = 1, x = 3, y = p[3]+.5, color = "steelblue") +
+    theme_light() +
+    theme(plot.title = element_text(size = 12, face = "bold"))
+
+
+```
+
+## A Segmented Sub-model Architecture
+**Dividing the model data and processing by file type provided valuable insights but requires more work to attain improved predictive results.**
+
+Long training times and crashes were causing headaches.  To address this, the project experimented with a segmented architecture that routes data to specialized sub-models based on file type (diagram below), enabling multiple shorter training runs and specific tuning.  This approach makes sense because different file formats have radically different characteristics and attributes. There were also potential file type specialization benefits. The downside was the management of many (6x) training sessions, objects, and results.
+
+```{r sub-model arch, echo=FALSE, fig.cap="Sub-model Model", fig.show='hold',fig.align="center", out.width = '75%'}
+knitr::include_graphics(c("SubModel_Arch_Diagram.png"))
+```
+
+The model was partitioned based on file type prevalence. The PE format (Microsoft Windows) represented the largest percentage and the longest sub-model training time.  Other sub-models had fewer files and achieved quicker training times. The training and test scripts divided data and processing by file type.  The training script divided the data to create separate training sets for six file types: PE, PEplus, Binary, Document, Text, and Other. The output was training object for each analysis tool (i.e. rf, rpart, xgb) and file format. The testing script divided test sets by file type and routed these to the appropriate specialized sub-models to create predictions. The sub-modeltesting consolidated outputs into an overall consolidated performance. 
+
+While there was much enthusiasm for this approach, there was not time to further tune the sub-modules.  The consolidated accuracy results from the sub-models were comparable (~0.1% less) than with a single model architecture.  Individual sub-models were not optimized for their file_type, so performance might increase with some further effort.  For this project, letting a single model create the decision tree for all file types was the right policy. 
+
+
+```{r Sub-Model_Performance, echo=FALSE, Cache=TRUE}
+
+MODEL = "ens2x"
+BATCH = "zt"
+TESTSET = "_mst_test"
+a <- PerfDat %>% filter(ftype == "ALL" & 
+                        model == MODEL &
+                        batch==BATCH) %>%
+  group_by(ftype) %>% summarize(Accuracy = mean(Accuracy), 
+                                FalsePos = mean(FalsePos),
+                                FalseNeg = mean(FalseNeg))
+aAcc <- a$Accuracy
+aFP <- a$FalsePos
+aFN <- a$FalseNeg
+alabel <- sprintf(" Full Set Accuracy: %.1f%%", aAcc)
+c <- PerfDat %>% filter(ftype == "composite" & 
+                        model == MODEL & 
+                        batch==BATCH) %>%
+  group_by(ftype) %>% summarize(Accuracy = mean(Accuracy), 
+                                FalsePos = mean(FalsePos),
+                                FalseNeg = mean(FalseNeg))
+cAcc <- c$Accuracy
+cFP <- c$FalsePos
+cFN <- c$FalseNeg
+clabel <- sprintf(" Composite Accuracy: %.1f%%", cAcc)
+
+PerfDat %>% filter(model == MODEL & 
+                     batch==BATCH) %>%
+  group_by(ftype) %>% summarize(Accuracy = mean(Accuracy), 
+                                FalsePos = mean(FalsePos),
+                                FalseNeg = mean(FalseNeg)) %>%
+  filter(ftype %in% c("PE","PEplus","Binary","Document","Text","Other")) %>%
+  ggplot(aes(ftype, Accuracy)) +
+  geom_bar(stat = "identity", fill="steelblue",  width = 0.7 ) +
+  geom_hline(yintercept=aAcc, color = "red",  size=.5) +
+  geom_hline(yintercept=cAcc, color = "blue", size=.5) +
+  geom_text(size = 2, aes(label=sprintf("%.2f%%", Accuracy)),
+            color = "steelblue", hjust=.5, vjust=-.5) +
+  geom_label(label = alabel, 
+           size=2, hjust = -.5, x = 0, y = aAcc, color = "red", fill = "white") +
+  geom_label(label = clabel, 
+           size=2, hjust = 0, x = 4, y = cAcc, color = "blue", fill= "white") +
+  scale_y_continuous(label = number_format(suffix = "%",  accuracy = 2)) +
+  coord_cartesian(ylim = c(85, 100)) +
+  ggtitle("Sub-Model Performance by File Format") +
+  xlab('') +
+  theme_light() +
+  theme(plot.title = element_text(size = 12, face = "bold")) +
+  theme(
+    legend.position = "bottom",
+    legend.text = element_text(size = 7, colour = "black"),
+    legend.title = element_blank(),
+    legend.key.width=unit(.3, "cm"),
+    legend.key.height = unit(.3, "cm") 
+  ) + 
+  guides(fill = guide_legend(nrow = 1))  
+  
+```
+
+
+
+# Conclusion
+
+This capstone project scratches the surface for applying machine learning to malware classification. The model's performance depends on the creative extraction and transformation of file attributes. This project showed that a test set's file mix impacts performance. 
+
+Applying the model to a "real life" stream of files is a worthwhile follow-on project.  This project's data sets differ in mix and coverage from enterprise file flows. Real-life, enterprise file mixes should provide some new challenges and dictate model improvements.  ReversingLabs sells the tool used by TiCloud to extract the attributes from files. This tool could provide input to a future project with new file sources.
+
+One area explored but not exploited in this project was file clusters base on parent/child relationships.  This approach would convict files based on "the company they keep."  Files come to computing devices in bundles (e.g., an installation package or a document with graphs).  A file/object previously bundled with known malware might indicate maliciousness of a new file bundle. These related files were downloaded, but time did not permit exploitation. 
+
+The project provided many challenges through all phases of data wrangling, pre-processing, and analysis. Many valuable lessons will apply to future data science projects.
+
+ 
+\newpage
+# Apendix A - Project Submission Contents
+## Suggested Tour
+This Capstone submission includes sample code and scripts based on a subset of data because of size and runtime constraints. Contact me if you want a larger set.
+
+1.    Look at the included README.TXT file for the latest information
+2.    Read the Capstone-Report_V3 PDF
+3.    Run the Capstone-Report_V3.Rmd.
+4.    Look at the rCapFUNCTIONS - These are sourced and called by the scripts.
+5.    Look at the rJSON_SCRIPTS_V2.R - You can't run this without ReversingLabs credentials).
+6.    Run rMODEL_SCRIPT_v2 - This creates the train and test data sets.(runtime 5+ minutes)
+7.    Run rTRAIN_MODEL_v2 - Trains and tests an RPART model with the data above. (runtime 5+ minutes).  You can set the flags in the script to train an RF and XGB (runtime 1-2 hours).
+8.    Run the rMODEL_PERFORMANCE_V2.R - This tests the models and saves a report file. 
+9.    Look at the CapstoneRptData (readRDS) - This has the test results created by rMODEL_PERFORMANCE_V2.R for all the training and test sets used in the project.
+
+## Components
+The files that accompany this are as follows:
+
+* Capstone Report (this document)
+  + PDF Format .pdf
+  + Markdown Format (Rmd)
+    - Images (.png) files for these reports
+    - CapstoneRptData performance data
+    - Data set data (_msu_test)
+* Data Files for the scripts (small subset for demo purposes)
+    + msu_model - a model data set for final processing and partitioning
+    + msu_test & _msu_train - test and training data sets derived from _msu_model by the rMODEL_SCRIPTS.R script. 
+    + zumtrain_rpart_ALL - an RPART training object created by the rTRAIN_MODEL_V1.x.R script and used for testing by the rMODEL_PERFORMANCE_V2.R 
+
+
+## Scripts
+### Functions That Do the Hard Work (rCapFUNTIONS.R)
+**This module is sourced by most of the scripts included with the submission.  It doesn't execute any code, but loads functions used in scripts.**
+
+This module loads using source() for use by scripting files. It contains functions that download files, create a modeling data sets, test models and create a performance results database for analysis. The Functions are grouped follows:
+
+*   Get Training Results
+*   Create Model Data Set
+*   JSON / Download File Information
+
+### Data Download Script (rJSON_SCRIPTS_V2.R) 
+**This script will not run without credentials from ReversingLabs and is included for informational purposes.**
+
+This module contains scripts to download file information from the ReversingLabs TiCloud database. These scripts call functions defined in the module 'rJSON Functions.R'. The scripts in this module were hand crafted for each download project so they are not completely generic. 
+
+### Create Training/Test Data Set (rMODEL_SCRIPTS_V2.R) 
+**This script is preconfigured to use msu_model as the input for creating the msu_train training set and msu_test test set. msu_model is included with the submission or by download).**
+
+This module contains scripts that create train and test sets from the JSON downloads. Use rJSON_SCRIPTS and rJASON_FUNCTIONS to download and capture file information from ReversingLabs. The script(s) in this module preprocesses and formats the data to create a 'Model' Data Set that is partitioned into train and test sets
+
+### Model Training Script (rTRAIN_MODEL_V2.R)
+**The script is preconfigured to train and test using includes msu_train and  msu_test (which are included with the submission or downloadable).**
+
+This SCRIPT runs model training batches that are usually executed with Rscript and can run for many hours. The script performs the following:
+
+  1. Loads appropriate _test and _train data sets for the batch (BATCH).
+  2. Selects the appropriate variables (columns) from the training / testing data sets
+  3. Runs a training session for each specified file_type in the list FORMATS. 
+     The file_formats are ALL, PE, PEplus, Binary, Document, Text, and Other.
+      a) Filters objects in the input data set for training / testing by file_types
+         specified in FORMATS.
+      b) Trains and tests sets for each file_type by using the tools specified by
+          the variables RPART, RFC and XGB.
+      c) Stores the training object in the file with a file name:
+             {batch}train_{model}_{file_type}   e.g B1train_rpart_Document
+
+### Model Testing Script -  (rMODEL_PERFORMANCE_V2.R)
+**This script is preconfigured to load zumtrain_rpart_ALL and generate a report and a results file like the one used by the Capstone_Report-Report_V3.RMD.**
+
+This module is a collection of scripts that processes the training objects created by the rTRAIN_MODE: 
+
+1.    Looks for files of training objects in the and upload them one by one
+2.    Tests them against 3 or 4 test datasets
+3,    Grabs details about the training stats, tune parameters, train set, and variable importance.
+4.    Stores a record for each test result by batch, model, file_type, testset.  This is saved and available for creating reports and analysis.
+
+

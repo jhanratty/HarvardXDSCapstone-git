@@ -1,0 +1,82 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2513
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\froman\fcharset0 Times-Roman;}
+{\colortbl;\red255\green255\blue255;\red255\green255\blue255;}
+{\*\expandedcolortbl;;\cssrgb\c100000\c100000\c100000;}
+\margl1440\margr1440\vieww18820\viewh13140\viewkind0
+\deftab720
+\pard\pardeftab720\partightenfactor0
+
+\f0\fs20\fsmilli10347 \cf0 \cb2 \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec0 README 10/25/2020\
+\
+## Suggested Tour\
+This Capstone submission includes sample code and scripts based on a subset of data because of size and runtime constraints. Contact me if you want a larger set.\
+\
+1.    Look at the included README.TXT file for the latest information\
+2.    Read the Capstone-Report_V3 PDF\
+3.    Run the Capstone-Report_V3.Rmd.\
+4.    Look at the rCapFUNCTIONS - These are sourced and called by the scripts.\
+5.    Look at the rJSON_SCRIPTS_V2.R - You can't run this without ReversingLabs credentials).\
+6.    Run rMODEL_SCRIPT_v2 - This creates the train and test data sets.(runtime 5+ minutes)\
+7.    Run rTRAIN_MODEL_v2 - Trains and tests an RPART model with the data above. (runtime 5+ minutes).  You can set the flags in the script ti train an RF and XGB (runtime 1-2 hours).\
+8.    Run the rMODEL_PERFORMANCE_V2.R - This tests the models and saves a report file. \
+9.    Look at the CapstoneRptData (readRDS) - This has the test results created by rMODEL_PERFORMANCE_V2.R for all the training and test sets used in the project.\
+\
+The files that accompany this are as follows:\
+* Capstone Report (this document)\
+  + PDF Format .pdf\
+  + Markdown Format (Rmd)\
+    - Images (.png) files for these reports\
+    - CapstoneRptData performance data\
+    - Data set data (_msu_test)\
+* Data Files for the scripts (small subset for demo purposes)\
+    + msu_model - a model data set for final processing and partitioning\
+    + msu_test & _msu_train - test and training data sets derived from _msu_model by the rMODEL_SCRIPTS.R script. \
+    + zumtrain_rpart_ALL - an RPART training object created by the rTRAIN_MODEL_V1.x.R script and used for testing by the rMODEL_PERFORMANCE_V2.R \
+\
+\
+## Functions That Do the Hard Work (rCapFUNTIONS.R)\
+**This module is sourced by most of the scripts included with the submission.  It doesn't execute any code, but loads functions used in scripts.**\
+\
+This module loads using source() for use by scripting files. It contains functions that download files, create a modeling data sets, test models and create a performance results database for analysis. The Functions are grouped follows:\
+*   GET TRAINING RESULTS\
+*   CREATE MODEL DATA SET\
+*   JSON / DOWNLOAD FILE INFORMATION\
+\
+## Data Download Script (rJSON_SCRIPTS_V2.R) \
+**This script will not run without credentials from ReversingLabs and is included for informational purposes.**\
+\
+This module contains scripts to download file information from the ReversingLabs TiCloud database. These scripts call functions defined in the module 'rJSON Functions.R'. The scripts in this module were handcrafted for each download project so they are not completely generic. \
+\
+## Create Training/Test Data Set (rMODEL_SCRIPTS_V2.R) \
+**This script is preconfigured to use msu_model as the input for creating the msu_train training set and msu_test test set. msu_model is included with the submission or by download).**\
+\
+This module contains scripts that create train and test sets from the JSON downloads.Use rJSON_SCRIPTS and rJASON_FUNCTIONS to download and capture file information from ReversingLabs. The script(s) in this module preprocesses and formats the data to create a 'Model' Data Set  that is partitioned into train and test sets\
+\
+## Model Training Script (rTRAIN_MODEL_V2.R)\
+**The script is preconfigured to train and test using includes msu_train and  msu_test (which are included with the submission or downloadable).**\
+\
+This SCRIPT runs model training batches that are usually executed with Rscript and can run for many hours. The script performs the following:\
+\
+  1. Loads appropriate _test and _train data sets for the batch (BATCH).\
+  2. Selects the appropriate variables (columns) from the training / testing data sets\
+  3. Runs a training session for each specified file_type in the list FORMATS. \
+     The file_formats are ALL, PE, PEplus, Binary, Document, Text, and Other.\
+      a) Filters objects in the input data set for training / testing by file_types\
+         specified in FORMATS.\
+      b) Trains and tests sets for each file_type by using the tools specified by\
+          the variables RPART, RFC and XGB.\
+      c) Stores the training object in the file with a file name:\
+             \{batch\}train_\{model\}_\{file_type\}   e.g B1train_rpart_Document\
+\
+## Model Testing Script -  (rMODEL_PERFORMANCE_V2.R)\
+**This script is preconfigured to load zumtrain_rpart_ALL and generate a report and a results file like the one used by the Capstone_Report-Report_V3.RMD.**\
+\
+This module is a collection of scripts that processes the training objects created by the rTRAIN_MODE: \
+\
+1.    Looks for files of training objects in the and upload them one by one\
+2.    Tests them against 3 or 4 test datasets\
+3,    Grabs details about the training stats, tune parameters, train set ,and variable importance.\
+4.    Stores a record for each  test result by batch, model, file_type, testset.  This is saved and available for creating  reports and analysis.  It was used by this report.\
+\
+}
